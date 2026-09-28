@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mental Math</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #ffffff;
+    color: #111111;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    padding: 28px 32px 32px;
+  }
+  .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1rem;
+    color: #555555;
+  }
+  .stats { display: flex; gap: 20px; }
+  .stats b { color: #111111; }
+  .middle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .equation {
+    font-size: clamp(2.6rem, 11vw, 6rem);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 2px;
+    user-select: none;
+    text-align: center;
+  }
+  .bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  input[type="number"] {
+    width: 220px;
+    font-size: 1.6rem;
+    text-align: center;
+    padding: 10px;
+    border: none;
+    border-bottom: 2px solid #cccccc;
+    background: transparent;
+    color: #111111;
+    outline: none;
+  }
+  input[type="number"]:focus { border-bottom-color: #111111; }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+  .feedback {
+    min-height: 1.5rem;
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .ok { color: #1a9d4b; }
+  .no { color: #d63031; }
+  .equation {
+    transition: color .15s;
+  }
+  .equation.glow-ok { color: #1a9d4b; }
+  .equation.glow-no { color: #d63031; }
+  .ops {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    font-size: 1.1rem;
+  }
+  .ops label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .ops input { width: 18px; height: 18px; accent-color: #111111; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <span>Question <b id="count">1</b></span>
+    <div class="stats">
+      <span>Score <b id="score">0</b></span>
+      <span>Streak <b id="streak">0</b></span>
+      <span>Accuracy <b id="acc">—</b></span>
+    </div>
+  </div>
+
+  <div class="ops" id="ops">
+    <label><input type="checkbox" value="+" checked> +</label>
+    <label><input type="checkbox" value="-" checked> −</label>
+    <label><input type="checkbox" value="*" checked> ×</label>
+    <label><input type="checkbox" value="/" checked> ÷</label>
+  </div>
+
+  <div class="middle">
+    <div class="equation" id="equation">— + —</div>
+  </div>
+
+  <div class="bottom">
+    <input type="number" id="answer" inputmode="numeric" autocomplete="off">
+    <p class="feedback" id="feedback"></p>
+  </div>
+
+<script>
+const equationEl = document.getElementById("equation");
+const answerEl = document.getElementById("answer");
+const feedbackEl = document.getElementById("feedback");
+const countEl = document.getElementById("count");
+const scoreEl = document.getElementById("score");
+const streakEl = document.getElementById("streak");
+const accEl = document.getElementById("acc");
+
+let a, b, op, result;
+let number = 1, score = 0, streak = 0, answered = 0, correct = 0;
+let flashTimer;
+
+const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+const opBoxes = [...document.querySelectorAll("#ops input")];
+
+function activeOps() {
+  return opBoxes.filter(box => box.checked).map(box => box.value);
+}
+
+opBoxes.forEach(box => {
+  box.addEventListener("change", () => {
+    if (activeOps().length === 0) {
+      box.checked = true;
+      return;
+    }
+    newQuestion();
+  });
+});
+
+function newQuestion() {
+  const pool = activeOps();
+  op = pool[rand(0, pool.length - 1)];
+
+  switch (op) {
+    case "+":
+    case "-": {
+      const wide = Math.random() < 0.35;
+      a = wide ? rand(100, 999) : rand(2, 99);
+      b = wide ? rand(100, 999) : rand(2, 99);
+      if (op === "-") {
+        const hi = Math.max(a, b), lo = Math.min(a, b);
+        a = hi; b = lo;
+      }
+      result = op === "+" ? a + b : a - b;
+      break;
+    }
+    case "*": {
+      a = rand(11, 149);
+      b = rand(11, 149);
+      result = a * b;
+      break;
+    }
+    case "/": {
+      b = rand(2, 12);
+      result = rand(3, 150);
+      a = result * b;
+      break;
+    }
+  }
+
+  equationEl.textContent = `${a} ${op} ${b}`;
+  countEl.textContent = number;
+  answerEl.value = "";
+  feedbackEl.textContent = "";
+  feedbackEl.className = "feedback";
+  answerEl.focus();
+}
+
+function flash(text, good) {
+  feedbackEl.textContent = text;
+  feedbackEl.className = "feedback " + (good ? "ok" : "no");
+  equationEl.classList.add(good ? "glow-ok" : "glow-no");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    feedbackEl.textContent = "";
+    feedbackEl.className = "feedback";
+    equationEl.classList.remove("glow-ok", "glow-no");
+  }, 600);
+}
+
+function submit() {
+  const raw = answerEl.value.trim();
+  if (raw === "") return;
+
+  answered++;
+  streak = 0;
+
+  if (Number(raw) === result) {
+    correct++;
+    streak++;
+    score += 10 * Math.min(streak, 5);
+    flash("Correct", true);
+    answerEl.blur();
+    setTimeout(() => {
+      number++;
+      newQuestion();
+    }, 600);
+  } else {
+    flash("Wrong", false);
+    answerEl.value = "";
+    answerEl.focus();
+  }
+
+  scoreEl.textContent = score;
+  streakEl.textContent = streak;
+  accEl.textContent = answered ? Math.round((correct / answered) * 100) + "%" : "—";
+}
+
+answerEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") submit();
+});
+
+newQuestion();
+</script>
+</body>
+</html>
