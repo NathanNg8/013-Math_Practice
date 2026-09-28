@@ -20,9 +20,34 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 20px;
     font-size: 1rem;
     color: #555555;
   }
+  .right {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+  .digits {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .digits select {
+    font: inherit;
+    color: #111111;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid #cccccc;
+    padding: 2px 4px;
+    outline: none;
+    cursor: pointer;
+  }
+  .digits select:focus { border-bottom-color: #111111; }
   .stats { display: flex; gap: 20px; }
   .stats b { color: #111111; }
   .middle {
@@ -46,8 +71,8 @@
     gap: 12px;
   }
   input[type="number"] {
-    width: 220px;
-    font-size: 1.6rem;
+    width: min(92vw, 26ch);
+    font-size: clamp(1.2rem, 5vw, 2rem);
     text-align: center;
     padding: 10px;
     border: none;
@@ -86,10 +111,23 @@
 <body>
   <div class="top">
     <span>Question <b id="count">1</b></span>
-    <div class="stats">
-      <span>Score <b id="score">0</b></span>
-      <span>Streak <b id="streak">0</b></span>
-      <span>Accuracy <b id="acc">—</b></span>
+    <div class="right">
+      <label class="digits">Max digits
+        <select id="maxDigits">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+        </select>
+      </label>
+      <div class="stats">
+        <span>Score <b id="score">0</b></span>
+        <span>Streak <b id="streak">0</b></span>
+        <span>Accuracy <b id="acc">—</b></span>
+      </div>
     </div>
   </div>
 
@@ -117,12 +155,36 @@ const countEl = document.getElementById("count");
 const scoreEl = document.getElementById("score");
 const streakEl = document.getElementById("streak");
 const accEl = document.getElementById("acc");
+const digitsEl = document.getElementById("maxDigits");
 
 let a, b, op, result;
+let maxDigits = Number(digitsEl.value);
 let number = 1, score = 0, streak = 0, answered = 0, correct = 0;
-let flashTimer;
+let flashTimer, checkTimer, locked = false;
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+const SAME_DIGIT_CHANCE = 0.7;
+const AUTO_CHECK_MS = 700;
+
+const pow10 = d => Math.pow(10, d);
+const limit = () => pow10(maxDigits) - 1;
+
+function randNum(d) {
+  return rand(d === 1 ? 1 : pow10(d - 1), pow10(d) - 1);
+}
+
+function randOperand() {
+  return randNum(rand(1, maxDigits));
+}
+
+function operandPair() {
+  if (Math.random() < SAME_DIGIT_CHANCE) {
+    const d = rand(1, maxDigits);
+    return [randNum(d), randNum(d)];
+  }
+  return [randOperand(), randOperand()];
+}
 
 const opBoxes = [...document.querySelectorAll("#ops input")];
 
@@ -140,6 +202,11 @@ opBoxes.forEach(box => {
   });
 });
 
+digitsEl.addEventListener("change", () => {
+  maxDigits = Number(digitsEl.value);
+  newQuestion();
+});
+
 function newQuestion() {
   const pool = activeOps();
   op = pool[rand(0, pool.length - 1)];
@@ -147,9 +214,9 @@ function newQuestion() {
   switch (op) {
     case "+":
     case "-": {
-      const wide = Math.random() < 0.35;
-      a = wide ? rand(100, 999) : rand(2, 99);
-      b = wide ? rand(100, 999) : rand(2, 99);
+      const pair = operandPair();
+      a = pair[0];
+      b = pair[1];
       if (op === "-") {
         const hi = Math.max(a, b), lo = Math.min(a, b);
         a = hi; b = lo;
@@ -158,15 +225,32 @@ function newQuestion() {
       break;
     }
     case "*": {
-      a = rand(11, 149);
-      b = rand(11, 149);
+      const pair = operandPair();
+      a = pair[0] === 1 ? rand(2, 9) : pair[0];
+      b = pair[1] === 1 ? rand(2, 9) : pair[1];
       result = a * b;
       break;
     }
     case "/": {
-      b = rand(2, 12);
-      result = rand(3, 150);
-      a = result * b;
+      if (Math.random() < SAME_DIGIT_CHANCE) {
+        const d = rand(1, maxDigits);
+        const lo = pow10(d - 1), hi = pow10(d) - 1;
+        const divisor = d === 1 ? rand(2, 9) : randNum(d);
+        const qMin = Math.max(2, Math.ceil(lo / divisor));
+        const qMax = Math.floor(hi / divisor);
+        if (qMin <= qMax) {
+          b = divisor;
+          result = rand(qMin, qMax);
+          a = b * result;
+          break;
+        }
+      }
+      const cap = limit();
+      const half = Math.max(2, Math.floor(cap / 2));
+      result = rand(2, half);
+      const bMax = Math.min(cap, Math.floor(cap / result));
+      b = bMax >= 2 ? rand(2, bMax) : 2;
+      a = b * result;
       break;
     }
   }
@@ -176,6 +260,8 @@ function newQuestion() {
   answerEl.value = "";
   feedbackEl.textContent = "";
   feedbackEl.className = "feedback";
+  clearTimeout(checkTimer);
+  locked = false;
   answerEl.focus();
 }
 
@@ -193,12 +279,14 @@ function flash(text, good) {
 
 function submit() {
   const raw = answerEl.value.trim();
-  if (raw === "") return;
+  if (raw === "" || locked) return;
 
+  clearTimeout(checkTimer);
   answered++;
   streak = 0;
 
   if (Number(raw) === result) {
+    locked = true;
     correct++;
     streak++;
     score += 10 * Math.min(streak, 5);
@@ -219,8 +307,17 @@ function submit() {
   accEl.textContent = answered ? Math.round((correct / answered) * 100) + "%" : "—";
 }
 
+answerEl.addEventListener("input", () => {
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(submit, AUTO_CHECK_MS);
+});
+
 answerEl.addEventListener("keydown", e => {
-  if (e.key === "Enter") submit();
+  if (e.key === "Enter") {
+    e.preventDefault();
+    clearTimeout(checkTimer);
+    submit();
+  }
 });
 
 newQuestion();
