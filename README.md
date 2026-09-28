@@ -26,15 +26,21 @@ brings up the number keypad on phones and tablets.
 - **Checkboxes at the top** — tick or untick `+ − × ÷` to choose which operators appear.
   All four are on by default. The last ticked operator can't be unticked, so there's
   always something to generate. Changing a checkbox deals a new question immediately.
-- **Type the answer and press Enter.** There are no buttons, and an empty field does
-  nothing — there's no way to skip a question.
+- **Max digits, top right** — the widest number allowed in a question, from `1` to `7`.
+  `1` means 0–9, `2` means up to 99, `3` up to 999, and so on. Defaults to `3`.
+  Changing it deals a new question immediately.
+- **Type the answer — it checks itself.** Stop typing for 0.7s and the answer is
+  graded automatically; there is no button and Enter is optional. Grading on every
+  keystroke would mark `1` wrong halfway through typing `12`, so the pause is what
+  marks "I'm done". An empty field does nothing, so there's no way to skip a question.
 - **Correct** turns the equation green and loads the next one.
 - **Wrong** turns it red, clears the field, and keeps the same equation up until you
   get it. The answer is never revealed.
 
 ## Question counter and stats
 
-Top left is the current question number. Top right tracks:
+Top left is the current question number. Top right holds the max-digits setting and
+these stats:
 
 | Stat | Behaviour |
 | --- | --- |
@@ -44,25 +50,36 @@ Top left is the current question number. Top right tracks:
 
 ## How questions are generated
 
-One operator per question, numbers chosen to stay mentally tractable:
+One operator per question. Each operand picks its **own** digit count from `1` to your
+max-digits setting, but about 70% of the time both operands are given the *same* digit
+count, so questions usually look like `293405 + 656779` rather than
+`1 + 1231242`. The rest mix sizes freely, which keeps the odd wide-gap question in the
+mix. No leading zeros: a 1-digit operand is 1–9, otherwise it's the full
+`10^(d-1)` to `10^d - 1` range.
 
 | Operator | Range |
 | --- | --- |
-| `+` | Two numbers from 2–99, or two from 100–999 about 35% of the time |
-| `−` | Same ranges, larger number always first so the result is never negative |
-| `×` | Two numbers from 11–149 (e.g. `124 * 143`) |
-| `÷` | Divisor 2–12, built by picking the result first (3–150) then multiplying, so it always divides evenly — no remainders |
+| `+` | Two independently sized operands, e.g. `7 + 4`, `91 + 10038` |
+| `−` | Same, operands swapped when needed so the result is never negative |
+| `×` | Two independently sized operands (e.g. `5299 * 5`) |
+| `÷` | Always even, no remainders. Usually the dividend and divisor share a digit count: a divisor is picked, then a multiple of it in the same range. Otherwise a quotient within the cap is picked and multiplied by a divisor small enough to stay under it |
+
+The digit cap is 7 rather than higher because `9999999 * 9999999` overflows the
+exact-integer range JavaScript can compare reliably.
 
 ## Project layout
 
 ```
-index.html, markup, styles, and all the game logic in one file
+index.html   markup, styles, and all the game logic in one file
 ```
 
 The whole app is a single `index.html`: inline CSS in `<style>`, vanilla JS in
 `<script>`, no modules or external requests. To change how numbers are picked, edit
-the `switch (op)` block in `newQuestion()` — each case only needs to set `a`, `b`,
-and `result`.
+`randOperand()` (which picks a random digit count up to `maxDigits` and then a number
+of that size) and the `switch (op)` block in `newQuestion()` — each case only needs to
+set `a`, `b`, and `result`.
 
 State is kept in module-scope variables (`score`, `streak`, `answered`, `correct`,
-`number`) and reset on page reload; nothing is persisted or sent anywhere.
+`number`, `maxDigits`) and reset on page reload; nothing is persisted or sent anywhere.
+`locked` guards the 0.6s gap after a correct answer so a keystroke landing mid-transition
+can't be graded against the old question.
